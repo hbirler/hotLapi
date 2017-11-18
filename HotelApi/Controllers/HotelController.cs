@@ -28,8 +28,11 @@ namespace HotelApi.Controllers
             string desc = await ApiInterface.MicrosoftVision(SampleImage.Fish);
             string[] popo = await ApiInterface.MicrosoftKeywords(desc);
             var res = await ApiInterface.GoogleVision(SampleImage.Fish);
+            string[] popo2 = await ApiInterface.MicrosoftKeywords(res["itemListElement"][0]["result"]["description"].ToString());
 
-            var city = await ApiInterface.GetCity(data.Keywords);
+            string[] keys = data.Keywords.Concat(popo).Concat(popo2).Select(x => x.ToLower().Trim()).ToArray();
+
+            var city = await ApiInterface.GetCity(keys);
             for (int i = 0; i < 5; i++)
             {
                 try
