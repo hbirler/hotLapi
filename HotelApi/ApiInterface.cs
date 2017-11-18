@@ -97,9 +97,15 @@ order by occ desc";
             return new Coordinates() { lat = locres.lat, lng = locres.lng };
         }
 
+        class GoogleVisionResult
+        {
+            public double Latitude { get; set; }
+            public double Longitude { get; set; }
+            public bool HasCoordinates { get; set; } = false;
+            public string[] descriptions = new string[0];
+        }
 
-
-        public static async Task<JToken> GoogleVision(string base64image)
+        public static async Task<GoogleVisionResult> GoogleVision(string base64image)
         {
             try
             {
@@ -137,7 +143,28 @@ order by occ desc";
                     var result = await streamReader.ReadToEndAsync();
                     JObject data = JObject.Parse(result);
 
-                    return data["responses"][0];
+                    GoogleVisionResult gres = new GoogleVisionResult();
+                    gres.descriptions = new string[0];
+                    gres.HasCoordinates = false;
+
+                    try
+                    {
+                        var essek = data["responses"][0]["landmarkAnnotations"][0]["locations"][0]["latLng"];
+                        gres.Latitude = Convert.ToDouble(essek["latitude"]);
+                        gres.Longitude = Convert.ToDouble(essek["longitude"]);
+                        gres.HasCoordinates = true;
+                    }
+                    catch
+                    { }
+
+                    try
+                    {
+                        var essek = data["responses"][0]["webDetection"]["webEntities"];
+                        gres.descriptions = essek.Select(x => x["description"].ToString()).ToArray();
+                    }
+                    catch { }
+                    
+                    return gres;
                 }
             }
             catch
