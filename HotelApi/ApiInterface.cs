@@ -97,7 +97,7 @@ order by occ desc";
             return new Coordinates() { lat = locres.lat, lng = locres.lng };
         }
 
-        class GoogleVisionResult
+        public class GoogleVisionResult
         {
             public double Latitude { get; set; }
             public double Longitude { get; set; }
