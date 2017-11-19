@@ -11,13 +11,38 @@ using System.Threading.Tasks;
 using System.Web;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Threading;
 
 namespace HotelApi
 {
-    public class ApiInterface
+    public struct PostInput
+    {
+        public string[] Keywords { get; set; }
+        public string Image { get; set; }
+        public string ArrivalDate { get; set; }
+        public string DepartureDate { get; set; }
+        public int MaxOutputSize { get; set; }
+    }
+    public class Coordinate
+    {
+        public double lat;
+        public double lng;
+    }
+
+    public struct Hotel
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Url { get; set; }
+        public string ImgUrl { get; set; }
+        public int Star { get; set; }
+        public double Price { get; set; }
+    }
+
+    public static class ApiInterface
     {
         public static HttpClient client = new HttpClient();
-        public static async Task<string> GetCity(string[] keywords)
+        public static string GetCity(string[] keywords)
         {
             try
             {
@@ -51,50 +76,48 @@ order by occ desc";
                         cmd.Parameters[$"word{i}"].Value = keywords[i] + "%";
                     }
 
-                    await sqlConnection1.OpenAsync();
+                    sqlConnection1.Open();
 
                     reader = cmd.ExecuteReader();
 
                     if (reader.HasRows)
                     {
-                        await reader.ReadAsync();
+                        reader.Read();
                         return reader["city"].ToString();
                     }
                     else
                     {
-                        return "Munich";
+                        return "";
                     }
                 }
             }
             catch (Exception e)
             {
-                return "Munich";
+                return "";
             }
         }
 
-        public struct Coordinates
-        {
-            public double lat;
-            public double lng;
-        }
+        
 
-        public static async Task<Coordinates> GetLocation(string loc)
+        public static Coordinate GetLocation(string loc)
         {
+            if (loc == "")
+                return null;
             string param = HttpUtility.UrlEncode(loc.Replace(" ", "+"));
-            var request = WebRequest.Create($"https://maps.googleapis.com/maps/api/geocode/json?address={param}");
+            var request = WebRequest.Create($"http://maps.googleapis.com/maps/api/geocode/json?address={param}");
             request.ContentType = "application/json; charset=utf-8";
-            var response = (HttpWebResponse)await request.GetResponseAsync();
+            var response = (HttpWebResponse)request.GetResponse();
 
             string text;
 
             using (var sr = new StreamReader(response.GetResponseStream()))
             {
-                text = await sr.ReadToEndAsync();
+                text = sr.ReadToEnd();
             }
 
             dynamic data = JObject.Parse(text);
             dynamic locres = data.results[0].geometry.location;
-            return new Coordinates() { lat = locres.lat, lng = locres.lng };
+            return new Coordinate() { lat = locres.lat, lng = locres.lng };
         }
 
         public class GoogleVisionResult
@@ -105,8 +128,10 @@ order by occ desc";
             public string[] descriptions = new string[0];
         }
 
-        public static async Task<GoogleVisionResult> GoogleVision(string base64image)
+        public static GoogleVisionResult GoogleVision(string base64image)
         {
+            if (base64image == "")
+                return new GoogleVisionResult();
             try
             {
                 var httpWebRequest = (HttpWebRequest)WebRequest.Create("https://vision.googleapis.com/v1/images:annotate?key=AIzaSyBdN2xmcmCIcp2JC7Zdc_aVBr-XVX83seU");
@@ -134,13 +159,13 @@ order by occ desc";
     }}
   ]
 }}";
-                    await streamWriter.WriteAsync(json);
+                    streamWriter.Write(json);
                 }
 
                 var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
                 using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
                 {
-                    var result = await streamReader.ReadToEndAsync();
+                    var result = streamReader.ReadToEnd();
                     JObject data = JObject.Parse(result);
 
                     GoogleVisionResult gres = new GoogleVisionResult();
@@ -173,8 +198,10 @@ order by occ desc";
             }
         }
 
-        public static async Task<string[]> MicrosoftKeywords(string text)
+        public static string[] MicrosoftKeywords(string text)
         {
+            if (text == "")
+                return new string[0];
             try
             {
                 string uribase = "https://westeurope.api.cognitive.microsoft.com/text/analytics/v2.0/keyPhrases";
@@ -195,13 +222,13 @@ order by occ desc";
         }}
     ]
 }}";
-                    await streamWriter.WriteAsync(json);
+                    streamWriter.Write(json);
                 }
 
                 var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
                 using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
                 {
-                    var result = await streamReader.ReadToEndAsync();
+                    var result = streamReader.ReadToEnd();
                     JObject data = JObject.Parse(result);
 
                     return data["documents"][0]["keyPhrases"].Select(x => x.ToString()).ToArray();
@@ -213,8 +240,10 @@ order by occ desc";
             }
         }
 
-        public static async Task<string> MicrosoftVision(string base64image)
+        public static string MicrosoftVision(string base64image)
         {
+            if (base64image == "")
+                return "";
             try
             {
                 string uribase = "https://westeurope.api.cognitive.microsoft.com/vision/v1.0/analyze";
@@ -227,13 +256,13 @@ order by occ desc";
                 using (var stream = httpWebRequest.GetRequestStream())
                 {
                     byte[] data = Convert.FromBase64String(base64image);
-                    await stream.WriteAsync(data, 0, data.Length);
+                    stream.Write(data, 0, data.Length);
                 }
 
                 var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
                 using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
                 {
-                    var result = await streamReader.ReadToEndAsync();
+                    var result = streamReader.ReadToEnd();
                     JObject data = JObject.Parse(result);
 
                     return data["description"]["captions"][0]["text"].ToString();
@@ -242,6 +271,118 @@ order by occ desc";
             catch (Exception e)
             {
                 return "";
+            }
+        }
+
+        public static (Coordinate[], string[]) GetHotelLocations(PostInput data)
+        {
+            try
+            {
+                if (data.Keywords == null)
+                    data.Keywords = new string[0];
+                
+                string[] popo = new string[0];
+                string[] popo2 = new string[0];
+                GoogleVisionResult res = new GoogleVisionResult();
+
+                if (data.Image != null && data.Image != "")
+                {
+                    string desc = ApiInterface.MicrosoftVision(data.Image);
+                    //string[] popo = ApiInterface.MicrosoftKeywords(desc);
+                    res = ApiInterface.GoogleVision(data.Image);
+
+                    popo2 = res.descriptions.SelectMany(x => ApiInterface.MicrosoftKeywords(x)).ToArray();
+                }
+
+
+
+                string[] safakeys = data.Keywords.Select(x => x.ToLower().Trim()).ToArray();
+                string[] allkeys = data.Keywords.Concat(popo).Concat(popo2).Select(x => x.ToLower().Trim()).ToArray();
+                string[] imgkeys = popo.Concat(popo2).Select(x => x.ToLower().Trim()).ToArray();
+
+
+                string[] cities = new string[] { ApiInterface.GetCity(allkeys), ApiInterface.GetCity(safakeys), ApiInterface.GetCity(imgkeys) };
+
+                var locations = new List<Coordinate>();
+
+                if (res.HasCoordinates)
+                {
+                    locations.Add(new Coordinate() { lat = res.Latitude, lng = res.Longitude });
+                }
+
+                locations.AddRange(cities.Where(x => x != "").Select(x => ApiInterface.GetLocation(x)));
+
+                return (locations.ToArray(), cities);
+            }
+            catch
+            {
+                return (new Coordinate[0], new string[0]);
+            }
+        }
+
+        public static string UrlFriend(object str)
+        {
+            return HttpUtility.UrlEncode(str.ToString().Replace(' ', '+'));
+        }
+
+        public static Hotel[] Check24(double latitude, double longitude, DateTime arrivalDate, DateTime departureDate, float radius = 10, string roomConfiguration = "[A]")
+        {
+            
+            string arrstr = arrivalDate.ToString("yyyy-MM-dd");
+            string depstr = departureDate.ToString("yyyy-MM-dd");
+            try
+            {
+                int resultId = -1;
+                while (true)
+                {
+                    string uribase = "https://api.hotel.check24.de/hackatum/hotels/searches.json";
+                    string uriparam = $"?latitude={latitude}&longitude={longitude}&radius={radius}&arrival_date={arrstr}&departure_date={depstr}&room_configuration={roomConfiguration}";
+                    var httpWebRequest = (HttpWebRequest)WebRequest.Create(uribase + uriparam);
+                    //httpWebRequest.ContentType = "application/octet-stream";
+                    httpWebRequest.Method = "POST";
+
+                    var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
+                    using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+                    {
+                        var result = streamReader.ReadToEnd();
+                        JObject data = JObject.Parse(result);
+                        string state = data["search"]["status_detailed"]["state"].ToString();
+                        resultId = Convert.ToInt32(data["search"]["id"].ToString());
+
+                        if (state == "finished")
+                            break;
+                    }
+                }
+
+                if (resultId == -1)
+                    throw new Exception("sheeet");
+                {
+                    string uribase = $"https://api.hotel.check24.de/hackatum/hotels/searches/{resultId}/results.json";
+
+                    var httpWebRequest = (HttpWebRequest)WebRequest.Create(uribase);
+                    httpWebRequest.Method = "POST";
+
+                    var httpResponse = (HttpWebResponse)httpWebRequest.GetResponse();
+                    using (var streamReader = new StreamReader(httpResponse.GetResponseStream()))
+                    {
+                        var result = streamReader.ReadToEnd();
+                        JObject data = JObject.Parse(result);
+                        return data["search"]["results"].Select(x => new Hotel()
+                        {
+                            Id = Convert.ToInt32(x["hotel_id"].ToString()),
+                            Name = x["name"].ToString(),
+                            Url = $"https://hotel.check24.de/HotL/{UrlFriend(x["city"])}-{x["city_id"]}/{UrlFriend(x["name"])}-{x["hotel_id"]}/{arrstr}/{depstr}/{roomConfiguration}/hotel.html",
+                            ImgUrl = x["image_url"].ToString(),
+                            Price = Convert.ToDouble(x["price"].ToString()),
+                            Star = (int)Math.Round(Convert.ToDouble(x["rating_average"].ToString()))
+                        }).ToArray();
+                    }
+                }
+
+            }
+            catch (Exception e)
+            {
+                return new Hotel[0];
             }
         }
     }

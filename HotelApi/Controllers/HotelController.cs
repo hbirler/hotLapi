@@ -6,46 +6,82 @@ using System.Data.SqlClient;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
 
 namespace HotelApi.Controllers
 {
+    
+
     public class HotelController : ApiController
     {
-        public struct PostInput
+
+        public IHttpActionResult Get()
         {
-            public string[] Keywords { get; set; }
-            public string Image { get; set; }
-            public string ArrivalDate { get; set; }
-            public string DepartureDate { get; set; }
-            public int MaxOutputSize { get; set; }
+            return Ok(new PostInput());
         }
 
         // POST api/<controller>
-        public async Task<IHttpActionResult> Post([FromBody]PostInput data)
+        public IHttpActionResult Post([FromBody]PostInput data)
         {
-            string desc = await ApiInterface.MicrosoftVision(SampleImage.Fish);
-            string[] popo = await ApiInterface.MicrosoftKeywords(desc);
-            var res = await ApiInterface.GoogleVision(SampleImage.Fish);
-            string[] popo2 = await ApiInterface.MicrosoftKeywords(res["itemListElement"][0]["result"]["description"].ToString());
-
-            string[] keys = data.Keywords.Concat(popo).Concat(popo2).Select(x => x.ToLower().Trim()).ToArray();
-
-            var city = await ApiInterface.GetCity(keys);
-            for (int i = 0; i < 5; i++)
+            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("en-GB");
+            if (data.Keywords == null)
+                data.Keywords = new string[0];
+            List<string> addkeywords = new List<string>();
+            foreach (string key in data.Keywords)
             {
-                try
+                string[] ks = key.Split(' ');
+                if (ks.Length == 2)
                 {
-                    var loc = await ApiInterface.GetLocation(city);
-                    return Ok(new { City = city, Location = loc });
+                    addkeywords.AddRange(ks);
                 }
-                catch
+                if (ks.Length > 2)
                 {
-
+                    addkeywords.AddRange(ks.Zip(ks.Skip(1), (x, y) => x + " " + y));
                 }
             }
-            return Ok(new { City = city });
+
+            data.Keywords = data.Keywords.Concat(addkeywords).ToArray();
+
+            (Coordinate[] coordinates, string[] cities) = ApiInterface.GetHotelLocations(data);
+
+            var parser = new Chronic.Parser();
+
+            if (data.ArrivalDate == null || data.ArrivalDate == "")
+                data.ArrivalDate = "today";
+            if (data.DepartureDate == null || data.DepartureDate == "")
+                data.DepartureDate = "next week";
+            if (data.Image == null)
+                data.Image = "";
+
+            var opt = new Chronic.Options();
+            opt.EndianPrecedence = Chronic.EndianPrecedence.Little;
+
+            DateTime arrivalDate;
+            DateTime departureDate;
+
+            if (data.ArrivalDate != null)
+                data.ArrivalDate.Replace('.', '/');
+            if (data.DepartureDate != null)
+                data.DepartureDate.Replace('.', '/');
+
+            try
+            {
+                arrivalDate = DateTime.Parse(data.ArrivalDate, null);
+                departureDate = DateTime.Parse(data.DepartureDate, null);
+            }
+            catch
+            {
+                arrivalDate = parser.Parse(data.ArrivalDate, opt).Start.Value;
+                departureDate = parser.Parse(data.DepartureDate, opt).Start.Value;
+            }
+
+            Hotel[] hotels = coordinates.SelectMany(x => ApiInterface.Check24(x.lat, x.lng, arrivalDate, departureDate)).ToArray();
+
+            hotels = hotels.Where((x, i) => !hotels.Take(i).Any(y => y.Id == x.Id)).ToArray();
+
+            return Ok(new { Hotels = hotels.Take(data.MaxOutputSize), Coordinates = coordinates, Cities = cities });
         }
     }
 }
