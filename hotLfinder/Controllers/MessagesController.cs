@@ -74,7 +74,7 @@ namespace Microsoft.Bot.Sample.LuisBot
             HeroCard heroCard = new HeroCard()
             {
                 Title = h.name,
-                Subtitle = $"User Reviews {h.star}. \nPrice: {h.price} Euro/Day",
+                Subtitle = $"User Reviews: {h.star}. \nPrice: {h.price} Euro/Day",
                 Images = new List<CardImage>()
                         {
                             new CardImage() { Url = h.imgurl }
