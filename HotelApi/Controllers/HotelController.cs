@@ -69,11 +69,18 @@ namespace HotelApi.Controllers
             try
             {
                 arrivalDate = DateTime.Parse(data.ArrivalDate, null);
-                departureDate = DateTime.Parse(data.DepartureDate, null);
             }
             catch
             {
                 arrivalDate = parser.Parse(data.ArrivalDate, opt).Start.Value;
+            }
+
+            try
+            {
+                departureDate = DateTime.Parse(data.DepartureDate, null);
+            }
+            catch
+            {
                 departureDate = parser.Parse(data.DepartureDate, opt).Start.Value;
             }
 
